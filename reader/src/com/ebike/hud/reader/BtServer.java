@@ -43,6 +43,33 @@ public class BtServer {
         Thread t = new Thread(this::loop, "hud-bt");
         t.setDaemon(true);
         t.start();
+        Thread keep = new Thread(this::keepDiscoverable, "hud-bt-disc");
+        keep.setDaemon(true);
+        keep.start();
+    }
+
+    /**
+     * 定期重申“可被发现”：系统对可发现模式有超时限制，
+     * 手机端过很久才开始搜索时会扫不到本机。
+     */
+    private void keepDiscoverable() {
+        BluetoothAdapter a;
+        try {
+            a = BluetoothAdapter.getDefaultAdapter();
+        } catch (Throwable t) {
+            return;
+        }
+        if (a == null) return;
+        while (running) {
+            try {
+                if (a.isEnabled()) {
+                    java.lang.reflect.Method m =
+                            BluetoothAdapter.class.getMethod("setScanMode", int.class);
+                    m.invoke(a, 23); // SCAN_MODE_CONNECTABLE_DISCOVERABLE
+                }
+            } catch (Throwable ignored) { }
+            sleep(45000);
+        }
     }
 
     public void stop() {

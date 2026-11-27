@@ -63,7 +63,7 @@ public class ReaderActivity extends Activity implements BtServer.Callback {
         view.status = connected ? "蓝牙已连接" : "等待手机连接";
         view.tip1 = "蓝牙名 " + BtServer.ADAPTER_NAME;
         view.tip2 = btMac.isEmpty()
-                ? "在手机端填入本机蓝牙 MAC"
+                ? "在手机端点「搜索并选择电纸书」"
                 : "MAC " + btMac;
         view.invalidate();
     }
