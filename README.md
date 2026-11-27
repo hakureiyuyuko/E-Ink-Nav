@@ -58,7 +58,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1 -App all -Sdk C:\Androi
 ```powershell
 adb -s <墨水屏序列号> install -r .build\reader\reader.apk
 ```
-打开 App，屏幕会显示自己的 IP（Wi-Fi 模式用）和蓝牙状态；设备名会被改成 `HUD-S4` 并进入可发现模式。
+打开 App，屏幕会显示蓝牙适配器名字与自身 MAC（部分系统不允许应用读取 MAC 时会提示在手机端填写）；设备会自动改名进入可发现模式。
 
 ### 手机端
 ```powershell

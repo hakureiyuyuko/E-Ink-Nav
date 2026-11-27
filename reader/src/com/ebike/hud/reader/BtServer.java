@@ -22,7 +22,7 @@ public class BtServer {
     public static final UUID SPP_UUID =
             UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
-    /** 与 HudServer.Callback 保持一致的子集 */
+    /** 回调：数据帧、镜像帧、连接状态与 MAC */
     public interface Callback extends Frames.Sink {
         void onBtStatus(String status);
 
