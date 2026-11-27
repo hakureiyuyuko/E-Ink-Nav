@@ -41,6 +41,7 @@ public class MainActivity extends Activity {
     private TextView devTV;
     private TextView statusTV;
     private TextView logTV;
+    private Button locBtn;
     private SharedPreferences sp;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
@@ -150,6 +151,11 @@ public class MainActivity extends Activity {
             updateGpsBtn(gpsBtn);
         });
         root.addView(gpsBtn);
+
+        locBtn = btn("");
+        updateLocBtn();
+        locBtn.setOnClickListener(v -> showLocationSettings());
+        root.addView(locBtn);
 
         // ---- 截图参数 ----
         final Button nativeBtn = btn("");
@@ -401,6 +407,59 @@ public class MainActivity extends Activity {
                 && checkSelfPermission(PERM_BT_SCAN) == PackageManager.PERMISSION_GRANTED;
     }
 
+    // ---------- 位置权限 ----------
+    /** 是否已授予“始终允许”（后台定位） */
+    private boolean hasBackgroundLocation() {
+        if (Build.VERSION.SDK_INT < 29) return true;
+        return checkSelfPermission(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void updateLocBtn() {
+        if (locBtn == null) return;
+        if (!Gps.hasPermission(this)) {
+            locBtn.setText("位置权限：未授权（点此授权）");
+            locBtn.setTextColor(Color.parseColor("#B00020"));
+        } else if (!hasBackgroundLocation()) {
+            locBtn.setText("位置权限：仅使用期间（点此改为「始终允许」）");
+            locBtn.setTextColor(Color.parseColor("#EF6C00"));
+        } else {
+            locBtn.setText("位置权限：始终允许 ✓");
+            locBtn.setTextColor(Color.parseColor("#1B5E20"));
+        }
+        locBtn.setAllCaps(false);
+    }
+
+    /**
+     * Android 11+ 不允许在弹窗里直接申请后台定位，只能引导用户到应用详情页手动选择“始终允许”。
+     */
+    private void showLocationSettings() {
+        if (!Gps.hasPermission(this)) {
+            requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION}, 44);
+            return;
+        }
+        if (hasBackgroundLocation()) {
+            toast("已是「始终允许」，可直接使用骑行数据");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("需要「始终允许」位置权限")
+                .setMessage("息屏或切到后台时，系统会停止定位更新。\n" +
+                        "请在接下来的设置页中选择：权限 → 位置信息 → 始终允许。")
+                .setPositiveButton("去设置", (d, w) -> {
+                    try {
+                        Intent i = new Intent(
+                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.parse("package:" + getPackageName()));
+                        startActivity(i);
+                    } catch (Throwable t) {
+                        toast("打不开设置: " + t.getClass().getSimpleName());
+                    }
+                })
+                .setNegativeButton("稍后", null)
+                .show();
+    }
+
     private void ensureBtPermissions() {
         if (Build.VERSION.SDK_INT < 31) return;
         List<String> need = new ArrayList<>();
@@ -425,8 +484,16 @@ public class MainActivity extends Activity {
         if (code == 44) {
             boolean ok = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
             DebugLog.push("定位权限: " + (ok ? "已授予" : "被拒绝"));
-            if (ok) startGps();
-            else toast("需要定位权限才能发送骑行数据");
+            updateLocBtn();
+            if (ok) {
+                if (!hasBackgroundLocation()) {
+                    showLocationSettings();   // 继续引导到「始终允许」
+                } else {
+                    startGps();
+                }
+            } else {
+                toast("需要定位权限才能发送骑行数据");
+            }
         }
     }
 
@@ -471,6 +538,7 @@ public class MainActivity extends Activity {
                 + (Gps.get().isRunning() ? "  ｜ " + Gps.get().status() : ""));
         String log = DebugLog.dump();
         if (!log.contentEquals(logTV.getText())) logTV.setText(log);
+        updateLocBtn();
     }
 
     private void updateGpsBtn(Button b) {

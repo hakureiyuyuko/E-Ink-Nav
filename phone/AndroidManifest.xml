@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- 骑行数据：速度 / 海拔 / 方向 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <!-- 息屏/后台时继续接收 GPS（需用户选择“始终允许”） -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <!-- 蓝牙 RFCOMM 连接（Android 12+ 需要运行时权限） -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />

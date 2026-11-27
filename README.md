@@ -94,6 +94,22 @@ adb -s <手机序列号> install -r .build\phone\phone.apk
 | 白边 | 自动裁掉并铺满 | 按行/列亮度起伏识别边框，纯白/纯黑都能裁 |
 | 横屏 | 电纸书切横版显示 | 内容为横向时让墨水屏旋转画布；画面倒置就切 90°/270° |
 
+## 权限说明
+
+| 端 | 权限 | 用途 |
+|---|---|---|
+| 手机端 | `FOREGROUND_SERVICE` + `..._MEDIA_PROJECTION` | 屏幕捕获必须运行在前台服务 |
+| 手机端 | `BLUETOOTH_CONNECT` / `BLUETOOTH_SCAN` | 设备扫描与 RFCOMM 连接（运行时） |
+| 手机端 | `ACCESS_FINE_LOCATION` | GPS 速度/海拔/方向 |
+| 手机端 | `ACCESS_BACKGROUND_LOCATION` | **息屏/后台继续定位**，需选择「始终允许」 |
+| 手机端 | `WAKE_LOCK` | 骑行时保持进程不被回收 |
+| 墨水屏端 | `WAKE_LOCK`、`BLUETOOTH*` | 保持屏幕常亮、蓝牙服务端 |
+
+两端均**不申请任何网络权限**（无 `INTERNET`）。
+
+> Android 11+ 不允许在弹窗里直接申请后台定位，必须由用户到系统设置里选择。
+> App 内点「位置权限」按钮会引导跳转；已授予时显示「始终允许 ✓」。
+
 ## 兼容性与已知问题
 
 - 在 **XTEINK S4**（Android 11 / RK3326 / 480×800 单色）上验证通过；其他 Android 墨水屏设备理论可用，需自行调整输出分辨率
