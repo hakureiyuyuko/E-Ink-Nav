@@ -74,11 +74,15 @@ adb -s <墨水屏序列号> install -r .build\reader\reader.apk
 adb -s <手机序列号> install -r .build\phone\phone.apk
 ```
 
-1. 打开手机的蓝牙（`BLUETOOTH_CONNECT/SCAN` 为运行时权限，首次会弹窗）
-2. 填电纸书蓝牙 MAC（可在墨水屏设备上执行 `adb shell settings get secure bluetooth_address` 获取）
+1. 打开手机蓝牙（`BLUETOOTH_CONNECT/SCAN` 为运行时权限，首次会弹窗）
+2. 点「**搜索并选择电纸书**」→ 在列表中点 `E-Ink Nav`（首次启动会自动扫描；
+   列表为空时确认墨水屏端 App 已运行，它会自动进入可发现模式）
 3. 任选一种模式：
    - **★ 开启截图模式** → 系统投屏授权里选「**单个应用**」→ 目标应用（如高德地图）
    - **★ 发送骑行数据** → 授予定位权限，户外等搜星（室内无信号是正常的）
+
+> 绝大多数系统下无需知道 MAC；若设备不广播名称（如某些 ROM 隐藏了可发现模式），
+> 可在选择列表中点「手动输入」填 MAC。
 
 ### 常用参数
 

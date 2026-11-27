@@ -1,8 +1,14 @@
 package com.ebike.hud.phone;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
@@ -15,22 +21,52 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 
 public class MainActivity extends Activity {
 
     private static final int REQ_CAPTURE = 1001;
 
-    private EditText macET;
+    private TextView devTV;
     private TextView statusTV;
     private TextView logTV;
     private SharedPreferences sp;
     private final Handler ui = new Handler(Looper.getMainLooper());
+
+    // 扫描结果
+    private final LinkedHashMap<String, String> found = new LinkedHashMap<>(); // mac -> name
+    private final List<String> rows = new ArrayList<>();
+    private final List<String> rowMacs = new ArrayList<>();
+    private ArrayAdapter<String> listAdapter;
+    private AlertDialog scanDialog;
+    private boolean scanning;
+
+    private final BroadcastReceiver btReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (BluetoothDevice.ACTION_FOUND.equals(action)) {
+                BluetoothDevice d = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                if (d != null) addFound(d);
+            } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
+                scanning = false;
+                if (rows.isEmpty()) {
+                    toast("没找到设备，请确认墨水屏端已打开 App");
+                }
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,22 +85,25 @@ public class MainActivity extends Activity {
         root.addView(title);
 
         TextView hint = new TextView(this);
-        hint.setText("把导航画面或骑行数据推到车把墨水屏。连接方式固定为蓝牙，只需系统投屏/定位授权。");
+        hint.setText("把导航画面或骑行数据推到车把墨水屏。连接方式固定为蓝牙。");
         hint.setTextSize(12);
         hint.setTextColor(Color.parseColor("#666666"));
         root.addView(hint);
 
-        // ---- 连接 ----
-        macET = new EditText(this);
-        macET.setHint("电纸书蓝牙 MAC，例 AA:BB:CC:DD:EE:FF");
-        macET.setInputType(InputType.TYPE_CLASS_TEXT);
-        macET.setSingleLine();
-        macET.setText(sp.getString("mac", ""));
-        root.addView(macET);
+        // ---- 设备选择 ----
+        devTV = new TextView(this);
+        devTV.setTextSize(14);
+        devTV.setPadding(0, dp(10), 0, dp(2));
+        updateDeviceLabel();
+        root.addView(devTV);
 
-        Button connect = btn("连接电纸书");
+        Button pick = btn("搜索并选择电纸书");
+        pick.setTextColor(Color.parseColor("#1A237E"));
+        pick.setOnClickListener(v -> startScan());
+        root.addView(pick);
+
+        Button connect = btn("连接 / 重新连接");
         connect.setOnClickListener(v -> {
-            save();
             Sender.start();
             toast("蓝牙连接中…");
         });
@@ -74,7 +113,6 @@ public class MainActivity extends Activity {
         Button mirror = btn("★ 开启截图模式（推送导航画面）");
         mirror.setTextColor(Color.parseColor("#1A237E"));
         mirror.setOnClickListener(v -> {
-            save();
             startService(new Intent(this, HudService.class));
             Sender.start();
             try {
@@ -187,7 +225,6 @@ public class MainActivity extends Activity {
         // ---- 调试 ----
         Button test = btn("发送测试数据（验证墨水屏）");
         test.setOnClickListener(v -> {
-            save();
             String[] seq = {
                     "{\"arrow\":\"right\",\"dist\":\"300\",\"unit\":\"米\",\"road\":\"建国路\",\"remain\":\"12.3 公里\",\"eta\":\"15:20\"}",
                     "{\"arrow\":\"left\",\"dist\":\"80\",\"unit\":\"米\",\"road\":\"人民大道\",\"remain\":\"12.0 公里\",\"eta\":\"15:20\"}",
@@ -220,26 +257,153 @@ public class MainActivity extends Activity {
         logTV.setTypeface(Typeface.MONOSPACE);
         logTV.setGravity(Gravity.START);
         sv.addView(logTV);
-        root.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(300)));
+        root.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(260)));
 
         ScrollView page = new ScrollView(this);
         page.addView(root);
         setContentView(page);
 
-        Sender.configure(macET.getText().toString());
+        Sender.configure(sp.getString("mac", ""));
         startService(new Intent(this, HudService.class));
+        if (!sp.getString("mac", "").isEmpty()) Sender.start();
 
         ui.postDelayed(ticker, 700);
         ensureBtPermissions();
+        // 首次使用（尚未选择设备）自动扫描一次
+        if (sp.getString("mac", "").isEmpty()) {
+            ui.postDelayed(this::startScan, 1500);
+        }
     }
 
-    // ---- 权限 ----
+    // ---------- 设备选择 ----------
+    private void updateDeviceLabel() {
+        String mac = sp.getString("mac", "");
+        String name = sp.getString("name", "");
+        if (mac.isEmpty()) {
+            devTV.setText("尚未选择电纸书");
+            devTV.setTextColor(Color.parseColor("#B00020"));
+        } else {
+            devTV.setText("电纸书：" + (name.isEmpty() ? "已选择" : name) + "  (" + mac + ")");
+            devTV.setTextColor(Color.parseColor("#1B5E20"));
+        }
+    }
+
+    private void startScan() {
+        if (!hasBtPermissions()) {
+            ensureBtPermissions();
+            toast("请先允许蓝牙权限");
+            return;
+        }
+        BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter();
+        if (a == null) { toast("本机无蓝牙"); return; }
+        if (!a.isEnabled()) {
+            try { a.enable(); } catch (Throwable ignored) { }
+            toast("正在打开蓝牙，请稍后重试");
+            return;
+        }
+
+        found.clear();
+        rows.clear();
+        rowMacs.clear();
+
+        // 已配对设备先列出来（本方案免配对，通常为空）
+        try {
+            for (BluetoothDevice d : a.getBondedDevices()) {
+                if (d != null) addFound(d);
+            }
+        } catch (Throwable ignored) { }
+
+        listAdapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, rows);
+        scanDialog = new AlertDialog.Builder(this)
+                .setTitle("选择电纸书")
+                .setAdapter(listAdapter, (dialog, which) -> {
+                    if (which >= 0 && which < rowMacs.size()) {
+                        String mac = rowMacs.get(which);
+                        String name = found.get(mac);
+                        selectDevice(mac, name);
+                    }
+                })
+                .setNeutralButton("手动输入", (d, w) -> showManualInput())
+                .setNegativeButton("停止搜索", (d, w) -> stopScan())
+                .create();
+        scanDialog.setOnDismissListener(d -> stopScan());
+        scanDialog.show();
+
+        try {
+            a.cancelDiscovery();
+            a.startDiscovery();
+            scanning = true;
+            DebugLog.push("开始扫描蓝牙设备");
+        } catch (SecurityException e) {
+            DebugLog.push("扫描被拒绝: 缺少 BLUETOOTH_SCAN");
+            toast("缺少蓝牙扫描权限");
+        } catch (Throwable t) {
+            DebugLog.push("扫描失败: " + t.getClass().getSimpleName());
+        }
+    }
+
+    private void addFound(BluetoothDevice d) {
+        String mac;
+        try { mac = d.getAddress(); } catch (SecurityException e) { return; }
+        if (mac == null || found.containsKey(mac)) return;
+        String name;
+        try { name = d.getName(); } catch (SecurityException e) { name = null; }
+        if (name == null || name.trim().isEmpty()) name = "未知设备";
+        found.put(mac, name);
+        rowMacs.add(mac);
+        rows.add(name + "\n" + mac);
+        if (listAdapter != null) listAdapter.notifyDataSetChanged();
+    }
+
+    private void stopScan() {
+        if (!scanning) return;
+        scanning = false;
+        try {
+            BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter();
+            if (a != null && a.isDiscovering()) a.cancelDiscovery();
+        } catch (Throwable ignored) { }
+    }
+
+    private void selectDevice(String mac, String name) {
+        sp.edit().putString("mac", mac).putString("name", name).apply();
+        Sender.configure(mac);
+        updateDeviceLabel();
+        stopScan();
+        if (scanDialog != null) scanDialog.dismiss();
+        Sender.start();
+        toast("已选择：" + name);
+    }
+
+    private void showManualInput() {
+        EditText et = new EditText(this);
+        et.setHint("AA:BB:CC:DD:EE:FF");
+        et.setInputType(InputType.TYPE_CLASS_TEXT);
+        et.setText(sp.getString("mac", ""));
+        new AlertDialog.Builder(this)
+                .setTitle("手动输入 MAC")
+                .setView(et)
+                .setPositiveButton("确定", (d, w) -> {
+                    String mac = et.getText().toString().trim().toUpperCase();
+                    if (mac.length() < 17) { toast("MAC 格式不对"); return; }
+                    selectDevice(mac, "手动添加");
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    // ---------- 权限 ----------
     private static final String PERM_BT_SCAN = "android.permission.BLUETOOTH_SCAN";
     private static final String PERM_BT_CONNECT = "android.permission.BLUETOOTH_CONNECT";
 
+    private boolean hasBtPermissions() {
+        if (Build.VERSION.SDK_INT < 31) return true;
+        return checkSelfPermission(PERM_BT_CONNECT) == PackageManager.PERMISSION_GRANTED
+                && checkSelfPermission(PERM_BT_SCAN) == PackageManager.PERMISSION_GRANTED;
+    }
+
     private void ensureBtPermissions() {
         if (Build.VERSION.SDK_INT < 31) return;
-        java.util.ArrayList<String> need = new java.util.ArrayList<>();
+        List<String> need = new ArrayList<>();
         if (checkSelfPermission(PERM_BT_CONNECT) != PackageManager.PERMISSION_GRANTED) need.add(PERM_BT_CONNECT);
         if (checkSelfPermission(PERM_BT_SCAN) != PackageManager.PERMISSION_GRANTED) need.add(PERM_BT_SCAN);
         if (!need.isEmpty()) requestPermissions(need.toArray(new String[0]), 43);
@@ -253,8 +417,7 @@ public class MainActivity extends Activity {
             for (int r : results) if (r != PackageManager.PERMISSION_GRANTED) ok = false;
             DebugLog.push("蓝牙权限: " + (ok ? "已授予" : "被拒绝"));
             if (ok) {
-                save();
-                Sender.start();
+                if (!sp.getString("mac", "").isEmpty()) Sender.start();
             } else {
                 toast("需要蓝牙权限才能连接");
             }
@@ -268,7 +431,6 @@ public class MainActivity extends Activity {
     }
 
     private void startGps() {
-        save();
         startService(new Intent(this, HudService.class));
         Sender.start();
         Mirror.get().stop();   // 骑行数据和截图两者只留一个
@@ -294,6 +456,7 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ---------- 状态刷新 ----------
     private final Runnable ticker = new Runnable() {
         @Override
         public void run() {
@@ -355,13 +518,6 @@ public class MainActivity extends Activity {
         b.setAllCaps(false);
     }
 
-    private void save() {
-        sp.edit()
-                .putString("mac", macET.getText().toString().trim())
-                .apply();
-        Sender.configure(macET.getText().toString());
-    }
-
     private Button btn(String text) {
         Button b = new Button(this);
         b.setText(text);
@@ -375,6 +531,23 @@ public class MainActivity extends Activity {
 
     private int dp(int v) {
         return (int) (v * getResources().getDisplayMetrics().density);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        IntentFilter f = new IntentFilter();
+        f.addAction(BluetoothDevice.ACTION_FOUND);
+        f.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
+        try { registerReceiver(btReceiver, f); } catch (Throwable ignored) { }
+        updateDeviceLabel();
+    }
+
+    @Override
+    protected void onPause() {
+        try { unregisterReceiver(btReceiver); } catch (Throwable ignored) { }
+        stopScan();
+        super.onPause();
     }
 
     @Override
