@@ -1,7 +1,6 @@
 package com.ebike.hud.reader;
 
 import android.app.Activity;
-import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -11,21 +10,13 @@ import android.view.WindowManager;
 
 import org.json.JSONObject;
 
-import java.net.Inet4Address;
-import java.net.InetAddress;
-import java.net.NetworkInterface;
-import java.util.Collections;
-import java.util.List;
-
-public class ReaderActivity extends Activity implements HudServer.Callback, BtServer.Callback {
+public class ReaderActivity extends Activity implements BtServer.Callback {
 
     private HudView view;
-    private HudServer server;
     private BtServer bt;
     private PowerManager.WakeLock lock;
     private final Handler ui = new Handler(Looper.getMainLooper());
 
-    private String wifiState = "启动中…";
     private String btState = "启动中…";
     private String btMac = "";
     private byte[] lastFrame;
@@ -48,20 +39,11 @@ public class ReaderActivity extends Activity implements HudServer.Callback, BtSe
 
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm != null) {
-            lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "hud:reader");
+            lock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "einknav:reader");
             lock.setReferenceCounted(false);
             lock.acquire();
         }
 
-        WifiManager wm = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
-        if (wm != null) {
-            try { wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "hud:wifi").acquire(); }
-            catch (Exception ignored) { }
-        }
-
-        // 两路都开：蓝牙直连为主，Wi-Fi 作为备用
-        server = new HudServer(this);
-        server.start();
         bt = new BtServer(this, this);
         bt.start();
 
@@ -77,41 +59,16 @@ public class ReaderActivity extends Activity implements HudServer.Callback, BtSe
     };
 
     private void refresh() {
-        String ip = localIp();
-        boolean btConnected = "蓝牙已连接".equals(btState);
-        boolean wifiConnected = "已连接".equals(wifiState);
-
-        String head;
-        if (btConnected) head = "蓝牙已连接";
-        else if (wifiConnected) head = "WiFi 已连接";
-        else head = "等待手机连接";
-        view.status = head;
-
-        view.tip1 = (ip == null ? "WiFi 未联网" : "WiFi " + ip + ":" + HudServer.TCP_PORT);
-        view.tip2 = (btMac == null || btMac.isEmpty())
-                ? "蓝牙 HUD-S4 已就绪（手机端点扫描）"
-                : "蓝牙 " + btMac;
+        boolean connected = "蓝牙已连接".equals(btState);
+        view.status = connected ? "蓝牙已连接" : "等待手机连接";
+        view.tip1 = "蓝牙名 " + BtServer.ADAPTER_NAME;
+        view.tip2 = btMac.isEmpty()
+                ? "在手机端填入本机蓝牙 MAC"
+                : "MAC " + btMac;
         view.invalidate();
     }
 
-    private String localIp() {
-        try {
-            List<NetworkInterface> ifs = Collections.list(NetworkInterface.getNetworkInterfaces());
-            for (NetworkInterface ni : ifs) {
-                if (ni.isLoopback() || !ni.isUp()) continue;
-                String name = ni.getName();
-                if (!name.startsWith("wlan") && !name.startsWith("eth")) continue;
-                for (InetAddress a : Collections.list(ni.getInetAddresses())) {
-                    if (a instanceof Inet4Address && !a.isLoopbackAddress()) {
-                        return a.getHostAddress();
-                    }
-                }
-            }
-        } catch (Exception ignored) { }
-        return null;
-    }
-
-    // ---- 数据 ----
+    // ---- 旋转指令 / 文字数据 ----
     @Override
     public void onNav(final JSONObject o) {
         // 控制帧：{"cmd":"rotate","deg":0|90|270}
@@ -124,6 +81,7 @@ public class ReaderActivity extends Activity implements HudServer.Callback, BtSe
             });
             return;
         }
+
         // 骑行数据：{"gps":1,"spd":18.3,"alt":120,"hdg":87,"acc":3}
         if (o.optInt("gps", 0) == 1) {
             final float spd = (float) o.optDouble("spd", 0);
@@ -148,6 +106,7 @@ public class ReaderActivity extends Activity implements HudServer.Callback, BtSe
             return;
         }
 
+        // 文字导航帧
         runOnUiThread(() -> {
             view.image = null;   // 切回文字模式
             view.gpsMode = false;
@@ -194,13 +153,6 @@ public class ReaderActivity extends Activity implements HudServer.Callback, BtSe
         });
     }
 
-    // ---- Wi-Fi 状态 ----
-    @Override
-    public void onStatus(String status) {
-        wifiState = status;
-        runOnUiThread(this::refresh);
-    }
-
     // ---- 蓝牙状态 ----
     @Override
     public void onBtStatus(String status) {
@@ -217,7 +169,6 @@ public class ReaderActivity extends Activity implements HudServer.Callback, BtSe
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        if (server != null) server.stop();
         if (bt != null) bt.stop();
         if (lock != null && lock.isHeld()) lock.release();
     }

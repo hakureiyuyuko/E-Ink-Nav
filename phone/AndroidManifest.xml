@@ -6,8 +6,7 @@
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="30" />
 
-    <!-- 仅保留截图模式真正需要的权限 -->
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 蓝牙 RFCOMM 传输，无需任何网络权限 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />

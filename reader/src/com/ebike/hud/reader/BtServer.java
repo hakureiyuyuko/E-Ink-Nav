@@ -6,11 +6,7 @@ import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.provider.Settings;
 
-import org.json.JSONObject;
-
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.util.UUID;
 
 /**
@@ -18,6 +14,9 @@ import java.util.UUID;
  * 用 insecure 方式免配对直连，手机按 MAC 直接连上来。
  */
 public class BtServer {
+
+    /** 蓝牙适配器对外显示的名字 */
+    public static final String ADAPTER_NAME = "E-Ink Nav";
 
     /** 标准 SPP UUID，电脑/其他串口工具也能连 */
     public static final UUID SPP_UUID =
@@ -73,7 +72,7 @@ public class BtServer {
             return;
         }
 
-        try { a.setName("HUD-S4"); } catch (Exception ignored) { }
+        try { a.setName(ADAPTER_NAME); } catch (Exception ignored) { }
         try {
             // 让设备可被手机扫描到（隐藏 API，失败也不影响按 MAC 直连）
             java.lang.reflect.Method m = BluetoothAdapter.class.getMethod("setScanMode", int.class);

@@ -26,21 +26,16 @@ public class MainActivity extends Activity {
 
     private static final int REQ_CAPTURE = 1001;
 
-    private EditText ipET;
-    private EditText portET;
     private EditText macET;
     private TextView statusTV;
     private TextView logTV;
-    private Button modeBtn;
     private SharedPreferences sp;
     private final Handler ui = new Handler(Looper.getMainLooper());
-    private String mode = Sender.MODE_BT;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         sp = getSharedPreferences("hud", Context.MODE_PRIVATE);
-        mode = sp.getString("mode", Sender.MODE_BT);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -48,24 +43,38 @@ public class MainActivity extends Activity {
         root.setPadding(pad, pad, pad, pad);
 
         TextView title = new TextView(this);
-        title.setText("导航 HUD 发送端");
+        title.setText("E-Ink Nav 发送端");
         title.setTextSize(20);
         title.setPadding(0, 0, 0, dp(4));
         root.addView(title);
 
         TextView hint = new TextView(this);
-        hint.setText("把高德的导航画面投到车把墨水屏。只需系统投屏授权，不需要无障碍。");
+        hint.setText("把导航画面或骑行数据推到车把墨水屏。连接方式固定为蓝牙，只需系统投屏/定位授权。");
         hint.setTextSize(12);
         hint.setTextColor(Color.parseColor("#666666"));
         root.addView(hint);
 
+        // ---- 连接 ----
+        macET = new EditText(this);
+        macET.setHint("电纸书蓝牙 MAC，例 AA:BB:CC:DD:EE:FF");
+        macET.setInputType(InputType.TYPE_CLASS_TEXT);
+        macET.setSingleLine();
+        macET.setText(sp.getString("mac", ""));
+        root.addView(macET);
+
+        Button connect = btn("连接电纸书");
+        connect.setOnClickListener(v -> {
+            save();
+            Sender.start();
+            toast("蓝牙连接中…");
+        });
+        root.addView(connect);
+
         // ---- 截图模式 ----
-        Button mirror = btn("★ 开启截图模式（推送高德画面）");
+        Button mirror = btn("★ 开启截图模式（推送导航画面）");
         mirror.setTextColor(Color.parseColor("#1A237E"));
         mirror.setOnClickListener(v -> {
             save();
-            Sender.configure(mode, ipET.getText().toString(),
-                    intOf(portET.getText().toString()), macET.getText().toString());
             startService(new Intent(this, HudService.class));
             Sender.start();
             try {
@@ -73,7 +82,7 @@ public class MainActivity extends Activity {
                         (android.media.projection.MediaProjectionManager)
                                 getSystemService(MEDIA_PROJECTION_SERVICE);
                 startActivityForResult(mpm.createScreenCaptureIntent(), REQ_CAPTURE);
-                toast("授权时请选「单个应用 → 高德地图」");
+                toast("授权时请选「单个应用」→ 目标应用");
             } catch (Throwable t) {
                 toast("无法请求投屏: " + t.getClass().getSimpleName());
             }
@@ -95,25 +104,16 @@ public class MainActivity extends Activity {
             if (Gps.get().isRunning()) {
                 Gps.get().stop();
                 DebugLog.push("GPS 已停止");
+            } else if (!Gps.hasPermission(this)) {
+                requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION}, 44);
             } else {
-                if (!Gps.hasPermission(this)) {
-                    requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION}, 44);
-                } else {
-                    save();
-                    Sender.configure(mode, ipET.getText().toString(),
-                            intOf(portET.getText().toString()), macET.getText().toString());
-                    startService(new Intent(this, HudService.class));
-                    Sender.start();
-                    Mirror.get().stop();   // 骑行数据和截图两者只留一个
-                    String r = Gps.get().start(this);
-                    DebugLog.push(r);
-                    toast(r);
-                }
+                startGps();
             }
             updateGpsBtn(gpsBtn);
         });
         root.addView(gpsBtn);
 
+        // ---- 截图参数 ----
         final Button nativeBtn = btn("");
         Mirror.get().setNativeRes(sp.getBoolean("nativeRes", true));
         updateNativeBtn(nativeBtn);
@@ -184,59 +184,10 @@ public class MainActivity extends Activity {
         });
         root.addView(dirBtn);
 
-        // ---- 连接 ----
-        modeBtn = btn("");
-        updateModeBtn();
-        modeBtn.setOnClickListener(v -> {
-            mode = Sender.MODE_BT.equals(mode) ? Sender.MODE_WIFI : Sender.MODE_BT;
-            sp.edit().putString("mode", mode).apply();
-            updateModeBtn();
-        });
-        root.addView(modeBtn);
-
-        macET = new EditText(this);
-        macET.setHint("电纸书蓝牙 MAC，例 AA:BB:CC:DD:EE:FF");
-        macET.setInputType(InputType.TYPE_CLASS_TEXT);
-        macET.setSingleLine();
-        macET.setText(sp.getString("mac", ""));
-        root.addView(macET);
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        ipET = new EditText(this);
-        ipET.setHint("墨水屏IP（Wi-Fi模式）");
-        ipET.setInputType(InputType.TYPE_CLASS_TEXT);
-        ipET.setSingleLine();
-        ipET.setText(sp.getString("ip", ""));
-        row.addView(ipET, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        portET = new EditText(this);
-        portET.setHint("端口");
-        portET.setInputType(InputType.TYPE_CLASS_NUMBER);
-        portET.setSingleLine();
-        portET.setText(String.valueOf(sp.getInt("port", Sender.DEFAULT_PORT)));
-        row.addView(portET, new LinearLayout.LayoutParams(dp(84), ViewGroup.LayoutParams.WRAP_CONTENT));
-        root.addView(row);
-
-        Button discover = btn("自动发现（Wi-Fi）");
-        discover.setOnClickListener(v -> doDiscover());
-        root.addView(discover);
-
-        Button connect = btn("连接电纸书");
-        connect.setOnClickListener(v -> {
-            save();
-            Sender.configure(mode, ipET.getText().toString(),
-                    intOf(portET.getText().toString()), macET.getText().toString());
-            startService(new Intent(this, HudService.class));
-            Sender.start();
-            toast(Sender.MODE_BT.equals(mode) ? "蓝牙连接中…" : "TCP 连接中…");
-        });
-        root.addView(connect);
-
+        // ---- 调试 ----
         Button test = btn("发送测试数据（验证墨水屏）");
         test.setOnClickListener(v -> {
             save();
-            Sender.configure(mode, ipET.getText().toString(),
-                    intOf(portET.getText().toString()), macET.getText().toString());
             String[] seq = {
                     "{\"arrow\":\"right\",\"dist\":\"300\",\"unit\":\"米\",\"road\":\"建国路\",\"remain\":\"12.3 公里\",\"eta\":\"15:20\"}",
                     "{\"arrow\":\"left\",\"dist\":\"80\",\"unit\":\"米\",\"road\":\"人民大道\",\"remain\":\"12.0 公里\",\"eta\":\"15:20\"}",
@@ -275,15 +226,14 @@ public class MainActivity extends Activity {
         page.addView(root);
         setContentView(page);
 
-        Sender.configure(mode, ipET.getText().toString(),
-                intOf(portET.getText().toString()), macET.getText().toString());
+        Sender.configure(macET.getText().toString());
         startService(new Intent(this, HudService.class));
 
         ui.postDelayed(ticker, 700);
         ensureBtPermissions();
     }
 
-    /** Android 12+ 需运行时授予 BLUETOOTH_CONNECT/SCAN */
+    // ---- 权限 ----
     private static final String PERM_BT_SCAN = "android.permission.BLUETOOTH_SCAN";
     private static final String PERM_BT_CONNECT = "android.permission.BLUETOOTH_CONNECT";
 
@@ -303,8 +253,7 @@ public class MainActivity extends Activity {
             for (int r : results) if (r != PackageManager.PERMISSION_GRANTED) ok = false;
             DebugLog.push("蓝牙权限: " + (ok ? "已授予" : "被拒绝"));
             if (ok) {
-                Sender.configure(mode, ipET.getText().toString(),
-                        intOf(portET.getText().toString()), macET.getText().toString());
+                save();
                 Sender.start();
             } else {
                 toast("需要蓝牙权限才能连接");
@@ -313,20 +262,19 @@ public class MainActivity extends Activity {
         if (code == 44) {
             boolean ok = results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED;
             DebugLog.push("定位权限: " + (ok ? "已授予" : "被拒绝"));
-            if (ok) {
-                save();
-                Sender.configure(mode, ipET.getText().toString(),
-                        intOf(portET.getText().toString()), macET.getText().toString());
-                startService(new Intent(this, HudService.class));
-                Sender.start();
-                Mirror.get().stop();
-                String r = Gps.get().start(this);
-                DebugLog.push(r);
-                toast(r);
-            } else {
-                toast("需要定位权限才能发送骑行数据");
-            }
+            if (ok) startGps();
+            else toast("需要定位权限才能发送骑行数据");
         }
+    }
+
+    private void startGps() {
+        save();
+        startService(new Intent(this, HudService.class));
+        Sender.start();
+        Mirror.get().stop();   // 骑行数据和截图两者只留一个
+        String r = Gps.get().start(this);
+        DebugLog.push(r);
+        toast(r);
     }
 
     @Override
@@ -362,6 +310,13 @@ public class MainActivity extends Activity {
         if (!log.contentEquals(logTV.getText())) logTV.setText(log);
     }
 
+    private void updateGpsBtn(Button b) {
+        b.setText(Gps.get().isRunning()
+                ? "停止发送骑行数据（速度/海拔/方向）"
+                : "★ 发送骑行数据（GPS 速度/海拔/方向）");
+        b.setAllCaps(false);
+    }
+
     private void updateNativeBtn(Button b) {
         b.setText(Mirror.get().nativeRes()
                 ? "分辨率：原生（点切换 自适应缩放）"
@@ -379,7 +334,8 @@ public class MainActivity extends Activity {
         b.setAllCaps(false);
     }
 
-    private void updateBarBtn(Button b) {        b.setText(Mirror.get().cropBars()
+    private void updateBarBtn(Button b) {
+        b.setText(Mirror.get().cropBars()
                 ? "白边：自动裁掉并铺满（点切换 保留白边）"
                 : "白边：保留（点切换 自动裁掉铺满）");
         b.setAllCaps(false);
@@ -399,47 +355,11 @@ public class MainActivity extends Activity {
         b.setAllCaps(false);
     }
 
-    private void updateGpsBtn(Button b) {
-        b.setText(Gps.get().isRunning()
-                ? "停止发送骑行数据（速度/海拔/方向）"
-                : "★ 发送骑行数据（GPS 速度/海拔/方向）");
-        b.setAllCaps(false);
-    }
-
-    private void updateModeBtn() {
-        boolean bt = Sender.MODE_BT.equals(mode);
-        modeBtn.setText(bt ? "连接方式：蓝牙（点切换 Wi-Fi）" : "连接方式：Wi-Fi（点切换 蓝牙）");
-        modeBtn.setAllCaps(false);
-        modeBtn.setTextColor(bt ? Color.parseColor("#1A237E") : Color.parseColor("#1B5E20"));
-    }
-
-    private void doDiscover() {
-        toast("正在搜索墨水屏…");
-        new Thread(() -> {
-            final String ip = Sender.discover(2500);
-            ui.post(() -> {
-                if (ip != null) {
-                    ipET.setText(ip);
-                    save();
-                    toast("找到墨水屏: " + ip);
-                } else {
-                    toast("没找到，请确认同一 Wi-Fi");
-                }
-            });
-        }).start();
-    }
-
     private void save() {
         sp.edit()
-                .putString("mode", mode)
-                .putString("ip", ipET.getText().toString().trim())
                 .putString("mac", macET.getText().toString().trim())
-                .putInt("port", intOf(portET.getText().toString()))
                 .apply();
-    }
-
-    private int intOf(String s) {
-        try { return Integer.parseInt(s.trim()); } catch (Exception e) { return Sender.DEFAULT_PORT; }
+        Sender.configure(macET.getText().toString());
     }
 
     private Button btn(String text) {

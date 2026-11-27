@@ -6,24 +6,17 @@ import android.bluetooth.BluetoothSocket;
 
 import java.io.Closeable;
 import java.io.OutputStream;
-import java.net.InetAddress;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.util.UUID;
 
-/** 发送端：支持两路传输（蓝牙 RFCOMM / Wi-Fi TCP），只发最新一帧，断线自动重连 */
+/**
+ * 发送端：蓝牙 RFCOMM（SPP）。
+ * 只发最新一帧，断线自动重连；文字帧（如旋转指令）优先于图片帧写出。
+ */
 public class Sender {
 
-    public static final int DEFAULT_PORT = 8848;
     public static final UUID SPP_UUID =
             UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
-    public static final String MODE_WIFI = "wifi";
-    public static final String MODE_BT = "bt";
-
-    private static volatile String mode = MODE_WIFI;
-    private static volatile String host = "";
-    private static volatile int port = DEFAULT_PORT;
     private static volatile String btMac = "";
     private static volatile String latest = null;
     private static volatile byte[] latestImage = null;
@@ -32,15 +25,8 @@ public class Sender {
     private static volatile Closeable link;
     private static Thread worker;
 
-    public static void configure(String m, String h, int p, String mac) {
-        mode = m;
-        host = h == null ? "" : h.trim();
-        port = p;
+    public static void configure(String mac) {
         btMac = mac == null ? "" : mac.trim();
-    }
-
-    public static String mode() {
-        return mode;
     }
 
     public static synchronized void start() {
@@ -81,9 +67,7 @@ public class Sender {
             try {
                 if (os == null) {
                     os = connect();
-                    status = MODE_BT.equals(mode)
-                            ? "蓝牙已连接 " + btMac
-                            : "TCP 已连接 " + host + ":" + port;
+                    status = "蓝牙已连接 " + btMac;
                     DebugLog.push("连接成功: " + status);
                     lastBeat = 0L;
                 }
@@ -132,37 +116,29 @@ public class Sender {
     }
 
     private static OutputStream connect() throws Exception {
-        if (MODE_BT.equals(mode)) {
-            if (btMac.length() < 17) throw new Exception("未填写电纸书蓝牙MAC");
-            BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter();
-            if (a == null) throw new Exception("本机无蓝牙");
-            if (!a.isEnabled()) {
-                a.enable();
-                try { Thread.sleep(1200); } catch (Exception ignored) { }
-            }
-            if (!a.isEnabled()) throw new Exception("蓝牙未开启");
-            try {
-                if (a.isDiscovering()) a.cancelDiscovery();
-            } catch (SecurityException ignored) {
-                // 新系统要求 BLUETOOTH_SCAN 运行时权限，没有也继续尝试连接
-            }
-            BluetoothDevice d;
-            try {
-                d = a.getRemoteDevice(btMac.toUpperCase());
-            } catch (IllegalArgumentException e) {
-                throw new Exception("MAC 格式不对");
-            }
-            BluetoothSocket bs = d.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
-            link = bs;
-            bs.connect();
-            return bs.getOutputStream();
+        if (btMac.length() < 17) throw new Exception("未填写电纸书蓝牙MAC");
+        BluetoothAdapter a = BluetoothAdapter.getDefaultAdapter();
+        if (a == null) throw new Exception("本机无蓝牙");
+        if (!a.isEnabled()) {
+            a.enable();
+            try { Thread.sleep(1200); } catch (Exception ignored) { }
         }
-
-        Socket s = new Socket();
-        link = s;
-        s.connect(new InetSocketAddress(host, port), 3000);
-        s.setTcpNoDelay(true);
-        return s.getOutputStream();
+        if (!a.isEnabled()) throw new Exception("蓝牙未开启");
+        try {
+            if (a.isDiscovering()) a.cancelDiscovery();
+        } catch (SecurityException ignored) {
+            // 新系统要求 BLUETOOTH_SCAN 运行时权限，没有也继续尝试连接
+        }
+        BluetoothDevice d;
+        try {
+            d = a.getRemoteDevice(btMac.toUpperCase());
+        } catch (IllegalArgumentException e) {
+            throw new Exception("MAC 格式不对");
+        }
+        BluetoothSocket bs = d.createInsecureRfcommSocketToServiceRecord(SPP_UUID);
+        link = bs;
+        bs.connect();
+        return bs.getOutputStream();
     }
 
     private static void closeQuietly() {
@@ -170,27 +146,5 @@ public class Sender {
             if (link != null) link.close();
         } catch (Exception ignored) { }
         link = null;
-    }
-
-    /** 局域网发现：广播 HUDPROBE，等电纸书回 HUDPONG */
-    public static String discover(int timeoutMs) {
-        java.net.DatagramSocket ds = null;
-        try {
-            ds = new java.net.DatagramSocket();
-            ds.setBroadcast(true);
-            byte[] probe = "HUDPROBE".getBytes("UTF-8");
-            ds.send(new java.net.DatagramPacket(probe, probe.length,
-                    InetAddress.getByName("255.255.255.255"), 8849));
-            ds.setSoTimeout(timeoutMs);
-            byte[] buf = new byte[64];
-            java.net.DatagramPacket p = new java.net.DatagramPacket(buf, buf.length);
-            ds.receive(p);
-            String msg = new String(p.getData(), 0, p.getLength(), "UTF-8").trim();
-            if ("HUDPONG".equals(msg)) return p.getAddress().getHostAddress();
-        } catch (Exception ignored) {
-        } finally {
-            try { if (ds != null) ds.close(); } catch (Exception ignored) { }
-        }
-        return null;
     }
 }

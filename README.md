@@ -12,7 +12,7 @@ app window (or streams GPS riding data) to the e-ink device over Bluetooth.
   自动裁掉应用留下的白边/黑边，自动识别横竖屏并让墨水屏旋转画布
 - **GPS 骑行数据模式**：速度（自适应字号）/ 海拔 / 方向 / 罗盘 / 精度，无需截图也无需导航
 - **文字导航模式**（早期实现，保留）：手机解析导航信息推 JSON，墨水屏手绘箭头+大字
-- **蓝牙 RFCOMM（SPP）免配对直连**，自动重连；Wi-Fi TCP + UDP 自动发现作备用
+- **蓝牙 RFCOMM（SPP）免配对直连**，自动重连（唯一传输通道，无任何网络权限）
 - 墨水屏友好：只在内容变化时重绘，图片帧做字节级去重
 
 ## 架构
@@ -20,10 +20,10 @@ app window (or streams GPS riding data) to the e-ink device over Bluetooth.
 ```
 ┌──────────────── 手机 (Android) ────────────────┐      ┌──── 墨水屏设备 ────┐
 │ MediaProjection 单应用捕获 → 虚拟屏 480×800@200dpi │      │                    │
-│   ↓ 裁剪白边 / 横竖识别 / 灰度 / JPEG               │ BLE? │  BtServer (SPP)   │
-│ Mirror ──┐                                        │ 否   │   ↓                │
+│   ↓ 裁剪白边 / 横竖识别 / 灰度 / JPEG               │      │  BtServer (SPP)   │
+│ Mirror ──┐                                        │ 蓝牙  │   ↓                │
 │ GPS 采集 ─┼→ Sender ── 蓝牙 RFCOMM (SPP) ─────────┼─────→│ Frames.loop        │
-│ 文字解析 ─┘   （或 TCP 8848 备用）                  │      │   ↓                │
+│ 文字解析 ─┘                                        │      │   ↓                │
 └──────────────────────────────────────────────────┘      │ HudView 全屏绘制    │
                                                            └────────────────────┘
 ```
@@ -35,7 +35,7 @@ app window (or streams GPS riding data) to the e-ink device over Bluetooth.
 | `reader/` | 墨水屏端 App（`com.ebike.hud.reader`） |
 | `phone/` | 手机端 App（`com.ebike.hud.phone`） |
 | `tools/build.ps1` | 免 Gradle 打包脚本（aapt2 + javac + d8 + apksigner） |
-| `tools/push.ps1` | 电脑通过蓝牙/TCP 推 JSON 测试脚本 |
+| `tools/send-json.ps1` | 电脑通过蓝牙推 JSON 帧（调试用） |
 | `tools/send-frame.ps1` | 电脑通过蓝牙推单帧 JPEG + 旋转指令 |
 | `tools/mktest.ps1` | 生成带方向标记的测试图 |
 | `docs/PROTOCOL.md` | 帧协议说明 |
