@@ -1,0 +1,26 @@
+# 构建产物与本地文件
+.build/
+*.apk
+*.keystore
+*.jks
+*.p12
+
+# 截图与调试输出
+*.png
+*.jpg
+*.jpeg
+*.zip
+*.txt
+!LICENSE
+*.xml.bak
+ui*.xml
+disp*.txt
+frames.jsonl
+
+# 编辑器 / 系统
+.vs/
+.idea/
+.vscode/
+*.user
+Thumbs.db
+.DS_Store
