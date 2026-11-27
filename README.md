@@ -50,7 +50,16 @@ app window (or streams GPS riding data) to the e-ink device over Bluetooth.
 powershell -ExecutionPolicy Bypass -File tools\build.ps1 -App all -Sdk C:\Android\Sdk
 ```
 
-产物在 `.build\<app>\<app>.apk`。脚本会自动生成 debug 签名密钥（`.build\debug.keystore`）。
+产物在 `.build\<app>\<app>.apk`。默认会在 `.build\debug.keystore` 生成调试密钥；
+若需沿用已有签名（例如升级已安装的版本），可指定自己的密钥：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\build.ps1 -App all `
+    -KeyStore C:\keys\my.keystore -KeyAlias myalias -StorePass 你的密码
+```
+
+> 注意：APK 签名不一致无法覆盖安装（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），
+> 升级旧版本时必须用与旧版本相同的密钥签名。
 
 ## 安装与使用
 

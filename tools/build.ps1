@@ -2,14 +2,16 @@
     [ValidateSet("all", "reader", "phone")]
     [string]$App = "all",
     [string]$Sdk = "",
-    [string]$StorePass = "einknav"
+    [string]$StorePass = "einknav",
+    [string]$KeyStore = "",
+    [string]$KeyAlias = "einknav"
 )
 
 # 免 Gradle 的 APK 打包：aapt2(res) + javac + d8 + zip + zipalign + apksigner
 $ErrorActionPreference = "Continue"
 $Root = Split-Path -Parent $PSScriptRoot
 $OutRoot = Join-Path $Root ".build"
-$Ks = Join-Path $OutRoot "debug.keystore"
+$Ks = if ($KeyStore) { $KeyStore } else { Join-Path $OutRoot "debug.keystore" }
 
 if (-not $Sdk) { $Sdk = $env:ANDROID_SDK_ROOT }
 if (-not $Sdk) { $Sdk = $env:ANDROID_HOME }
@@ -44,7 +46,8 @@ Write-Host "tools   : $bt"
 New-Item -ItemType Directory -Force -Path $OutRoot | Out-Null
 
 if (-not (Test-Path $Ks)) {
-    & keytool -genkeypair -keystore $Ks -alias einknav -storepass $StorePass -keypass $StorePass `
+    if ($KeyStore) { throw "指定的密钥不存在: $Ks" }
+    & keytool -genkeypair -keystore $Ks -alias $KeyAlias -storepass $StorePass -keypass $StorePass `
         -keyalg RSA -keysize 2048 -validity 10000 `
         -dname "CN=E-Ink Nav,OU=dev,O=einknav,L=NA,ST=NA,C=CN" 2>$null | Out-Null
     if (-not (Test-Path $Ks)) { throw "签名密钥创建失败" }
@@ -98,7 +101,7 @@ function Build-Apk([string]$name) {
 
     $final = Join-Path $out "$name.apk"
     & java -jar (Join-Path $bt "lib\apksigner.jar") sign --ks $Ks --ks-pass "pass:$StorePass" `
-        --key-pass "pass:$StorePass" --ks-key-alias einknav --out $final (Join-Path $out "aligned.apk")
+        --key-pass "pass:$StorePass" --ks-key-alias $KeyAlias --out $final (Join-Path $out "aligned.apk")
     if ($LASTEXITCODE -ne 0) { throw "签名失败 ($name)" }
 
     $size = [math]::Round((Get-Item $final).Length / 1KB, 1)
