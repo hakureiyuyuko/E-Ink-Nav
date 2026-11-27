@@ -17,6 +17,9 @@ ui*.xml
 disp*.txt
 frames.jsonl
 
+# 但保留应用图标资源
+!**/res/mipmap-*/ic_launcher.png
+
 # 编辑器 / 系统
 .vs/
 .idea/

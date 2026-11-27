@@ -28,6 +28,7 @@
 
     <application
         android:label="E-Ink Nav 发送端"
+        android:icon="@mipmap/ic_launcher"
         android:allowBackup="false">
 
         <activity
